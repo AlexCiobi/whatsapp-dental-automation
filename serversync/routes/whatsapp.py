@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query, Response, Request
+from fastapi import APIRouter, Query, Response, Request, BackgroundTasks
 from fastapi.responses import PlainTextResponse
 
 from config import settings
@@ -35,8 +35,11 @@ def verify_webhook(
 
 
 @router.post("/webhook/whatsapp")
-async def receive_message(request: Request):
-    body = await request.json()
+async def receive_message(request: Request, background_tasks: BackgroundTasks):
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "ok"}
     entries = body.get("entry", [])
     for entry in entries:
         for change in entry.get("changes", []):
@@ -44,7 +47,8 @@ async def receive_message(request: Request):
             for message in messages:
                 if message.get("type") != "text":
                     continue
-                _handle_text_message(
+                background_tasks.add_task(
+                    _handle_text_message,
                     from_number=message["from"],
                     body=message["text"]["body"],
                 )
