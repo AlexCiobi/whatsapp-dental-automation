@@ -38,20 +38,20 @@ def verify_webhook(
 async def receive_message(request: Request, background_tasks: BackgroundTasks):
     try:
         body = await request.json()
-    except Exception:
-        return {"status": "ok"}
-    entries = body.get("entry", [])
-    for entry in entries:
-        for change in entry.get("changes", []):
-            messages = change.get("value", {}).get("messages", [])
-            for message in messages:
-                if message.get("type") != "text":
-                    continue
-                background_tasks.add_task(
-                    _handle_text_message,
-                    from_number=message["from"],
-                    body=message["text"]["body"],
-                )
+        entries = body.get("entry", [])
+        for entry in entries:
+            for change in entry.get("changes", []):
+                messages = change.get("value", {}).get("messages", [])
+                for message in messages:
+                    if message.get("type") != "text":
+                        continue
+                    background_tasks.add_task(
+                        _handle_text_message,
+                        from_number=message["from"],
+                        body=message["text"]["body"],
+                    )
+    except Exception as exc:
+        logger.exception("webhook error: %s", exc)
     return {"status": "ok"}
 
 
