@@ -14,7 +14,7 @@ from services.appointment_service import (
     is_owner,
 )
 from services.whatsapp_service import send_text_message
-from services.ai_service import parse_intent
+from services.ai_service import parse_intent, generate_chat_response
 from templates import messages_en as msg
 
 logger = logging.getLogger(__name__)
@@ -51,9 +51,17 @@ async def receive_message(request: Request):
     return {"status": "ok"}
 
 
+def _normalize_phone(phone: str) -> str:
+    """Ensure phone number has leading + (WhatsApp omits it)."""
+    if phone and not phone.startswith("+"):
+        return "+" + phone
+    return phone
+
+
 def _handle_text_message(from_number: str, body: str) -> None:
     client = get_supabase()
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from_number = _normalize_phone(from_number)
 
     if is_owner(client, from_number):
         _handle_owner_message(client, from_number, body, today)
@@ -66,7 +74,8 @@ def _handle_patient_message(client, from_number: str, body: str, today: str) -> 
     appointments = get_appointments_by_phone(client, from_number)
 
     if not appointments:
-        send_text_message(from_number, "We couldn't find any upcoming appointments for your number. Please contact the clinic directly.")
+        reply = generate_chat_response(from_number, body, context="This patient has no upcoming appointments on record.")
+        send_text_message(from_number, reply)
         return
 
     appt = appointments[0]
@@ -86,12 +95,15 @@ def _handle_patient_message(client, from_number: str, body: str, today: str) -> 
         send_text_message(from_number, reply)
 
     else:
-        send_text_message(
-            from_number,
-            f"Hi {appt.patient_name}! Your next appointment is with {appt.doctor_name} on "
+        context = (
+            f"Patient name: {appt.patient_name}. "
+            f"They have an appointment with {appt.doctor_name} on "
             f"{appt.appointment_time.strftime('%B %d at %H:%M')}. "
-            "Reply CANCEL or RESCHEDULE to make changes.",
+            "If this is the first message, greet them by name and mention the appointment. "
+            "Ask if they want to confirm, cancel, or reschedule."
         )
+        reply = generate_chat_response(from_number, body, context=context)
+        send_text_message(from_number, reply)
 
 
 def _handle_owner_message(client, from_number: str, body: str, today: str) -> None:
@@ -123,4 +135,5 @@ def _handle_owner_message(client, from_number: str, body: str, today: str) -> No
         send_text_message(from_number, f"Done. {appt.patient_name}'s appointment cancelled.")
 
     else:
-        send_text_message(from_number, "I didn't understand that. To reschedule: 'Reschedule +91XXXXXXXXXX to [date/time]'. To cancel: 'Cancel +91XXXXXXXXXX'.")
+        reply = generate_chat_response(from_number, body, context="You are responding to the clinic owner or staff member.")
+        send_text_message(from_number, reply)
